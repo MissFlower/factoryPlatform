@@ -1,0 +1,198 @@
+<!--
+文件作者：mawenjuan
+创建日期：2021.5.18
+文件说明：半成品查询
+ -->
+<template>
+  <div>
+    <SearchFormBox>
+      <ElForm ref="searchForm" :model="form" :rules="rules">
+
+        <ElFormItem label="型号" prop="modelCode" class="required-item">
+          <ModelSelect ref="model" v-model="form.modelCode" :type="MODEL_NAME.SEMIFINISHED" @getList="getModelList" />
+        </ElFormItem>
+
+        <ElFormItem label="硬件版本" prop="version" class="required-item">
+          <HardwareVersion v-model="form.version" :type="MODEL_NAME.SEMIFINISHED" />
+        </ElFormItem>
+
+        <ElFormItem label="测试状态" prop="testStatus" class="required-item">
+          <TestStatus v-model="form.testStatus" />
+        </ElFormItem>
+
+        <ElFormItem label="充电板ID" prop="chargeBoardId">
+          <ElInput v-model="form.chargeBoardId" placeholder="请输入充电板ID" />
+        </ElFormItem>
+
+        <ElFormItem label="工位MAC" prop="operator">
+          <ElInput v-model="form.operator" placeholder="请输入工位MAC" />
+        </ElFormItem>
+
+        <ElFormItem label="日期" prop="date">
+          <DatePicker v-model="form.date" type="datetimerange" value-format="yyyy-MM-dd HH:mm:ss" />
+        </ElFormItem>
+      </ElForm>
+
+      <template slot="searchBtn">
+        <ElButton type="primary" @click="search">查询</ElButton>
+        <ElButton @click="reset">重置</ElButton>
+      </template>
+    </SearchFormBox>
+
+    <TableListBox>
+      <template>
+        <div slot="right">
+          <ElButton type="primary" @click="download" :disabled="btnDisabled">数据下载</ElButton>
+        </div>
+      </template>
+
+      <ElTable :data="tableData" border>
+        <ElTableColumn prop="factoryName" label="工厂" min-width="100" />
+
+        <ElTableColumn prop="model" label="型号" min-width="80" />
+
+        <ElTableColumn prop="hardwareVersion" label="硬件版本" min-width="80" />
+
+        <ElTableColumn prop="chargeBoardId" label="充电板ID" min-width="150" />
+
+        <ElTableColumn prop="testStatus" label="测试状态" min-width="80" />
+
+        <ElTableColumn prop="testTime" label="测试时间" min-width="160" />
+
+        <ElTableColumn prop="operator" label="工位MAC" min-width="160" />
+        <template v-for="item in headerData">
+          <ElTableColumn :key="item.name" :prop="item.name" :label="item.des" min-width="120">
+            <template slot-scope="{ row }">
+              <div class="mark" :style="{background: TEST_STATUS_COLOR[row[item.name]]}" />
+            </template>
+          </ElTableColumn>
+        </template>
+        <div slot="empty" class="table-defalut-graph">
+          <DefaultGraph :src="require('src/assets/icons/empty.svg')" text="暂无数据" />
+        </div>
+      </ElTable>
+      <template slot="footer">
+        <Pagination
+          :total="total"
+          :current-page.sync="form.page"
+          :page-size.sync="form.size"
+          @change="pageChange"
+        />
+      </template>
+    </TableListBox>
+  </div>
+</template>
+
+<script>
+// 半成品查询
+import SearchFormBox from 'src/components/SearchFormBox'
+import TableListBox from 'src/components/TableListBox'
+import ModelSelect from 'src/components/ModelSelect'
+import HardwareVersion from 'src/components/HardwareVersion'
+import TestStatus from 'src/components/TestStatus'
+import DatePicker from 'src/components/DatePicker'
+import Pagination from 'src/components/Pagination'
+import DefaultGraph from 'src/components/DefaultGraph'
+import { MODEL_NAME, TEST_STATUS_COLOR } from 'src/common/constants'
+import { getSemiQueryList, downloadSemiQueryList } from 'src/api/deviceTest'
+import { parseTime, downLoadExcel, deepClone } from 'src/utils'
+export default {
+  name: 'ChargeBoardSearch',
+  components: {
+    SearchFormBox,
+    TableListBox,
+    ModelSelect,
+    HardwareVersion,
+    TestStatus,
+    DatePicker,
+    Pagination,
+    DefaultGraph
+  },
+  data() {
+    const currentTime = new Date(new Date().toLocaleDateString()).getTime()
+    const endTime = parseTime(currentTime + 60 * 60 * 24 * 1 * 1000 - 1000)
+    const startTime = parseTime(currentTime)
+    return {
+      MODEL_NAME,
+      TEST_STATUS_COLOR,
+      form: {
+        modelCode: '',
+        version: '',
+        date: [startTime, endTime],
+        chargeBoardId: '',
+        testStatus: '',
+        operator: '',
+        page: 1,
+        size: 10
+      },
+      rules: {
+        date: { required: true, message: '日期不能为空!', trigger: 'blur' }
+      },
+      total: 0,
+      tableData: [],
+      headerData: []
+    }
+  },
+  computed: {
+    btnDisabled() {
+      return !this.tableData.length
+    }
+  },
+  mounted() {
+    // this.getList()
+  },
+  methods: {
+    handleParams() {
+      // 处理参数
+      const { date: [startTime, endTime] } = this.form
+      const params = deepClone(this.form)
+      delete params.date
+      return {
+        ... params,
+        startTime,
+        endTime
+      }
+    },
+    getList() {
+      // 获取列表
+      this.$refs.searchForm.validate(async valid => {
+        if (valid) {
+          const { pageInfo, testItem } = await getSemiQueryList(this.handleParams())
+          const { list = [], total } = pageInfo
+          this.tableData = list
+          this.total = total
+          this.headerData = testItem
+        }
+      })
+    },
+    search() {
+      // 查询
+      this.form.page = 1
+      this.getList()
+    },
+    reset() {
+      // 重置
+      this.form.page = 1
+      this.$refs.searchForm.resetFields()
+      this.getList()
+    },
+    download() {
+      // 下载数据
+      this.$refs.searchForm.validate(async valid => {
+        if (valid) {
+          const data = await downloadSemiQueryList(this.handleParams())
+          data && downLoadExcel(data)
+        }
+      })
+    },
+    pageChange() {
+      // 页码改变
+      this.getList()
+    },
+    getModelList(modelList) {
+      this.form.modelCode = modelList[0]?.key
+      this.getList()
+    }
+  }
+}
+</script>
